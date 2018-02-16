@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>indias with leaflet & topojson</title>
+    <script src="http://code.jquery.com/jquery-3.3.1.min.js" integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8="
+        crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.2.0/dist/leaflet.css" integrity="sha512-M2wvCLH6DSRazYeZRIm1JnYyh22purTM+FDB5CsyxtQJYeKq83arPe5wgbNmcFXGqiSH2XR8dT/fJISVA1r/zQ=="
+        crossorigin="" />
+    <script src="https://d3js.org/topojson.v1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chroma-js/1.3.6/chroma.min.js"></script>
+    <script src="data.js"></script>
+
+    <style>
+        html,
+        body,
+        #india {
+            height: 100%;
+        }
+
+        #state {
+            height: 100%;
+        }
+
+        #go-back {
+            margin: 14px;
+            display: none;
+            /* display: block; */
+            /* top: 0px; */
+            z-index: 10;
+            left: 5%;
+            position: absolute;
+        }
+
+        #info {
+            border: 1px solid;
+            position: absolute;
+            z-index: 1000;
+            right: 2%;
+            top: 3%;
+            background: #ffffff;
+            width: 10%;
+            height: 12%;
+            border-radius: 15px;
+            padding: 1%;
+        }
+
+        #select {
+            position: absolute;
+            z-index: 2000;
+            right: 9%;
+            top: 30%;
+        }
+
+
+        #scale {
+            height: 20px;
+            background: red;
+            /* For browsers that do not support gradients */
+            background: linear-gradient(to bottom right, #fce08a, #d53e4f);
+            /* Standard syntax (must be last) */
+        }
+
+        #grad_border {
+            border: 1px solid black;
+            padding: 10px;
+            width: 20%;
+            position: absolute;
+            z-index: 1001;
+            left: 1%;
+            top: 90%;
+        }
+
+        #range {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        #grad1 {
+            height: 10px;
+            z-index: 2000;
+            background: red;
+            /* For browsers that do not support gradients */
+            background: linear-gradient(to bottom right, #fce08a, #d53e4f);
+            /* Standard syntax (must be last) */
+        }
+    </style>
+</head>
+
+<body>
+        <div id="grad_border">
+                <div id="grad1"></div>
+                <div id="range">
+                    <span> 0 </span>
+                    
+                    <span id="max">  </span>
+                </div>
+            </div>
+    <button onclick="goBack();" id="go-back">Back</button>
+    <div id="info"></div>
+    
+    <div id="select">
+        <select id="type" onchange="selectType();">
+            <option value="muslim">Muslim</option>
+            <option value="sc">SC</option>
+            <option value="st">ST</option>
+        </select>
+    </div>
+    <div id="india"></div>
+    <div id="state"></div>
+
+    <script src="https://unpkg.com/leaflet@1.2.0/dist/leaflet.js" integrity="sha512-lInM/apFSqyy1o6s89K4iQUKg6ppXEgsVxT35HbzUupEVRh2Eu9Wdl4tHj7dZO0s1uvplcYGmt3498TtHq+log=="
+        crossorigin="">
+        </script>
+    <script>
+
+
+        // console.log(districtList);
+
+
+        L.TopoJSON = L.GeoJSON.extend({
+            addData: function (jsonData) {
+                if (jsonData.type === 'Topology') {
+                    for (key in jsonData.objects) {
+                        geojson = topojson.feature(jsonData, jsonData.objects[key]);
+                        L.GeoJSON.prototype.addData.call(this, geojson);
+                    }
+                }
+                else {
+                    L.GeoJSON.prototype.addData.call(this, jsonData);
+                }
+            }
+        });
+
+        //TopoJSON hosted on github
+        const indiaUrl = 'https://raw.githubusercontent.com/muditjuneja/JSON/master/state.json';
+        const stateUrl = 'https://raw.githubusercontent.com/muditjuneja/JSON/master/district.json';
+        let stateData;
+
+        //For Coloring the layers : Using Chroma.js
+        let colorScale;
+        let selectedState;
+
+
+        //Topo Layers
+        let stateTopoLayer = new L.TopoJSON();
+        let indiaTopoLayer = new L.TopoJSON();
+
+
+        //Map from DOM
+        var india = L.map('india').setView([28.5272181, 77.0688965], 4.5);
+        L.tileLayer('https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token=pk.eyJ1IjoiYXNlZW0zMTIiLCJhIjoiY2phdzIzcW55NXQzbDJxbnFtYXl2eXNnYiJ9.z8_v4MmPVgVFr1V42xEyqA', {
+            id: 'mapbox.light'
+        }).addTo(india);
+
+        //View will be set after a state has been clicked
+        var state = L.map('state');
+
+
+
+
+        function makeMap(topoLayer, url, what) {
+            $.getJSON(url)
+                .done(function (response) {
+                    addTopoData(response, topoLayer, what);
+                });
+        }
+
+        function addTopoData(topoData, topoLayer, what) {
+            topoLayer.addData(topoData);
+            topoLayer.addTo(what);
+            topoLayer.eachLayer(handleLayer);
+        }
+
+
+        function handleLayer(layer) {
+            if (layer.feature) {
+                let stateName = layer.feature.properties['ST_NM'];
+                if (layer.feature.properties['DISTRICT']) {
+                    let districtName = layer.feature.properties['DISTRICT'];
+                    stateName = layer.feature.properties['ST_NM'];
+                    var randomValue = Math.random();
+                    layer.setStyle
+                        ({
+                            fillColor: colorScale(randomValue).hex(),
+                            fillOpacity: 0.65,
+                            color: '#990000',
+                            weight: 0.25,
+                            opacity: 0.9
+                        });
+                    layer.bringToFront();
+                    layer.on({
+                        mouseover: function () {
+
+                            //Normal ToolTip
+                            // layer.bindTooltip(districtName, { sticky: true }).openTooltip();
+
+                            //Custom HTML content
+                            // layer.bindPopup("<b>District</b><br>" + districtName).openPopup();
+
+                            $("#info").html("<b>District</b><br>" + districtName);
+                        }
+                    });
+                } else {
+                    //  var randomValue = Math.random();
+                    let html = "<b>India Population</b> " + stateName;
+                    let id = layer.feature.properties['id'];
+                    let s;
+                    if (stateData) {
+                        s = stateData.find(x => x.id == id);
+                        if (s) {
+                            html = html + "<br>" + s.value + "<br>" + ((s.value / s.total) * 100).toFixed(2) + "%";
+                            fillColor = colorScale(s.value).hex();
+                        } else {
+                            fillColor = "#666";
+                        }
+                        layer.setStyle
+                            ({
+                                fillColor: fillColor,
+                                fillOpacity: 0.65,
+                                color: '#ffffff',
+                                weight: 2,
+                                opacity: 0.9
+                            });
+                    }
+
+                    layer.on({
+                        mouseover: function () {
+                            //Normal ToolTip
+                            // layer.bindTooltip(stateName, { sticky: true }).openTooltip();
+
+                            //Custom HTML content
+                            // layer.bindPopup("<b>State</b><br>" + id + " : " + stateName).openPopup();
+
+                            $("#info").html(html);
+                        },
+                        click: function () {
+                            selectedState = stateName;
+                            state.fitBounds(this._bounds);
+                            makeMap(stateTopoLayer, stateUrl, state);
+                            $('#india').css('display', 'none');
+                            $('#state').css('display', 'block');
+                            $('#go-back').css('display', 'block');
+
+                        }
+
+                    });
+                }
+                if (selectedState && selectedState != stateName) {
+                    stateTopoLayer.removeLayer(layer);
+                }
+            }
+
+
+
+        }
+
+        function goBack() {
+            $('#state').css('display', 'none');
+            $('#india').css('display', 'block');
+            $('#go-back').css('display', 'none');
+        }
+
+
+        selectType();
+        function selectType() {
+            let type = $("#type").val();
+            $.ajax({
+                url: "http://139.59.84.225/projects/map-data-api/web/index.php/v1/state-level-categorie/views/?type=" + type, success: function (result) {
+                    //Map for India
+                    stateData = result;
+                    stateData.sort(function (a, b) {
+                        return b.value - a.value;
+                    });
+
+                    $("#max").html(stateData[0].value);
+                    colorScale = chroma
+                        .scale(['#fce08a', '#d53e4f'])
+                        .domain([0, stateData[0].value]);
+                    makeMap(indiaTopoLayer, indiaUrl, india);
+                }
+            });
+        }
+
+
+    //    makeMap(indiaTopoLayer, indiaUrl, india);
+
+
+
+
+
+
+
+    </script>
+</body>
+
+</html>
